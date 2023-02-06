@@ -29,7 +29,7 @@ void pageRankSerial(Graph &g, int max_iters) {
     pr_curr[i] = INIT_PAGE_RANK;
     pr_next[i] = 0.0;
   }
-
+//ok
   // Push based pagerank
   timer t1;
   double time_taken = 0.0;

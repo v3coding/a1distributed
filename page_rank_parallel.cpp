@@ -69,7 +69,8 @@ void* pageRankParallel(void *_arg){
   //PageRankType *pr_curr = threadData->pr_curr;
   //PageRankType *pr_next = threadData->pr_next;
   std::atomic<PageRankType> *pr_curr = threadData->pr_curr;
-  std::atomic<PageRankType> *pr_next = threadData->pr_next;
+  //std::atomic<PageRankType> *pr_next = threadData->pr_next;
+  std::atomic<PageRankType>* pr_next = new std::atomic<PageRankType>[n];
 
   PageRankType pr_nextTemp;
   std::atomic<PageRankType> node;
@@ -80,44 +81,45 @@ void* pageRankParallel(void *_arg){
   PageRankType tempRank;
   PageRankType tempRank2;
 
+  //For each iteration
   for (int iter = 0; iter < maxIterations; iter++) {
-   // std::cout << "Iteration " << iter << std::endl;
-    // for each vertex 'u', process all its outNeighbors 'v'
-    for (uintV u = index; u <= n - numberOfThreads; u += numberOfThreads) {
-    //for (uintV u = 0; u < n; u++) { 
+    //For each thread, assign a number of verticies
+    //for (uintV u = index; u <= n - numberOfThreads + 1; u += numberOfThreads) {
+      //TODO: pass values in when calling threads to break up work instead of doing this hopping thing
+      //use std::thread instead of pthread_t 
+    for (uintV u = index; u < n - numberOfThreads; u += numberOfThreads) {
       uintE out_degree = g.vertices_[u].getOutDegree();
       for (uintE i = 0; i < out_degree; i++) {
         uintV v = g.vertices_[u].getOutNeighbor(i);
-        //pr_next[v] += (pr_curr[u] / out_degree);
         tempval = pr_next[v] + (pr_curr[u]/out_degree);
         tempRank = pr_next[v];
-        pr_next[v].compare_exchange_weak(tempRank,tempval);
+        while(!pr_next[v].compare_exchange_weak(tempRank,tempval)){}
         computations++;
         pr_nextTemp = pr_next[v] + (pr_curr[u] / out_degree);
       }
-      //threadData->barrier->wait();
     }
     threadData->barrier->wait();
-
-    //for (uintV v = 0; v < n; v++) {
-      for(uintV v = index; v <= n - numberOfThreads; v += numberOfThreads){
+//
+// BELOW THEORETICALLY COULD JUST BE pr_cur[v] = pr_next[v]
+//
+      for(uintV v = index; v < n - numberOfThreads; v += numberOfThreads){
       pr_next[v] = PAGE_RANK(pr_next[v]);
       // reset pr_curr for the next iteration
       tempRank = pr_curr[v];
       tempRank2 = pr_next[v];
       pr_curr[v].compare_exchange_weak(tempRank,tempRank2);
       //pr_curr[v] = pr_next[v];
+      //can theoretically just be this
       pr_next[v] = 0.0;
     }
   }
-
+  threadData->barrier->wait();
   std::cout << "The number of computations done by thread " << index << " is " << computations << std::endl;
 
  // std::cout << "Breaking Main Loop " << std::endl;
 
   PageRankType sum_of_page_ranks = 0;
-  //for (uintV u = 0; u < n; u++) {
-    for (uintV u = index; u <= n - numberOfThreads; u += numberOfThreads){
+    for (uintV u = index; u < n - numberOfThreads; u += numberOfThreads){
     sum_of_page_ranks += pr_curr[u];
   }
     time_taken = t1.stop();
@@ -135,35 +137,38 @@ void pageRankSerial(Graph &g, int max_iters) {
 
   timer t;
   t.start();
-
+//
   //PageRankType *pr_curr = new PageRankType[n];
   //PageRankType *pr_next = new PageRankType[n];
   std::atomic<PageRankType>* pr_curr = new std::atomic<PageRankType>[n];
-  std::atomic<PageRankType>* pr_next = new std::atomic<PageRankType>[n];
+  //std::atomic<PageRankType>* pr_next = new std::atomic<PageRankType>[n];
 
   for (uintV i = 0; i < n; i++) {
     pr_curr[i] = INIT_PAGE_RANK;
-    pr_next[i] = 0.0;
-  }
+    //pr_next[i] = 0.0;
+}
 
 threadObject threadHolder;
   threadHolder.writeMutex = new pthread_mutex_t;
   threadHolder.barrier = new CustomBarrier(numberOfThreads);
   threadStats* stats = new threadStats[numberOfThreads];
   threadHolder.threadStatistics = stats;
+  threadHolder.threadStatistics->threadPageRank = 0;
+  threadHolder.threadStatistics->threadRuntime = 0;
   threadHolder.totalPageRank = 0;
   threadHolder.totalRuntime = 0;
   pthread_mutex_init(threadHolder.writeMutex,NULL);
   pthread_t threads[numberOfThreads];
 
   threadHolder.pr_curr = pr_curr;
-  threadHolder.pr_next = pr_next;
+  //threadHolder.pr_next = pr_next;
 
 // u is the start, n is the finish
   for(int i = 0; i < numberOfThreads; i++){
     pthread_create(&threads[i],NULL,pageRankParallel,&threadHolder);
     threadHolder.threadStatistics[i].threadID = threads[i];
     threadHolder.threadStatistics[i].n = n;
+    //in each thread pass start and end value here
   }
 
   for(int i = 0; i < numberOfThreads; i++){
